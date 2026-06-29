@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:webview_flutter/webview_flutter.dart';
 import '../db/database_helper.dart';
 import '../models/models.dart';
+import 'account_session_manager.dart';
 
 /// JS：点击所有"查看更多"按钮展开完整模型列表
 const clickShowMoreJs = r'''
@@ -208,10 +209,14 @@ enum RefreshState {
 
 /// 刷新协调器 - 使用 WebViewController 串行提取所有项目用量
 /// 对应原 AIFloatingWindow._refresh_all_usage_dashboard / _extract_next_project
+///
+/// 多账号场景下，每个项目提取前会通过 [AccountSessionManager] 切换到
+/// 该项目所属账号的 Cookie 上下文，保证跨账号刷新时登录态正确隔离。
 class UsageExtractor {
   final WebViewController controller;
   final List<Account> accounts;
   final OnRefreshProgress? onProgress;
+  final AccountSessionManager? sessionManager;
 
   bool _running = false;
   int _successCount = 0;
@@ -224,9 +229,10 @@ class UsageExtractor {
     required this.controller,
     required this.accounts,
     this.onProgress,
+    this.sessionManager,
   });
 
-  /// 收集所有需要刷新的项目
+  /// 收集所有需要刷新的项目（按账号分组，便于 Cookie 切换）
   List<({String accountName, String projectName, String url})> get allProjects {
     final list = <({String accountName, String projectName, String url})>[];
     for (final acc in accounts) {
@@ -250,8 +256,27 @@ class UsageExtractor {
     onProgress?.call(RefreshState.started);
 
     final projects = allProjects;
+    String? lastAccount;
     for (final proj in projects) {
       try {
+        // 跨账号切换：仅当账号变化时才切换 Cookie 上下文（避免同账号多次切换）
+        if (sessionManager != null && proj.accountName != lastAccount) {
+          final acc = accounts.firstWhere(
+            (a) => a.name == proj.accountName,
+            orElse: () => accounts.first,
+          );
+          final defaultUrl = acc.lastUrl.isNotEmpty
+              ? acc.lastUrl
+              : 'https://aistudio.google.com/projects';
+          await sessionManager!.switchTo(
+            targetAccount: proj.accountName,
+            currentUrl: '', // 后台刷新不依赖当前页面，不保存
+            defaultUrl: defaultUrl,
+          );
+          lastAccount = proj.accountName;
+          // 等待 Cookie 应用稳定
+          await Future.delayed(const Duration(milliseconds: 300));
+        }
         await _extractOne(proj.accountName, proj.projectName, proj.url);
         _successCount++;
         onProgress?.call(RefreshState.saved);

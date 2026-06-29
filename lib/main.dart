@@ -4,6 +4,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'app_store.dart';
 import 'theme/colors.dart';
 import 'utils/color_ext.dart';
+import 'services/account_session_manager.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/browser_screen.dart';
 import 'screens/settings_screen.dart';
@@ -57,14 +58,14 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   final _pageIndex = ValueNotifier(0); // 0=面板 1=浏览器 2=设置
   late final WebViewController _webController;
-  bool _initialized = false;
+  final AccountSessionManager _sessionManager = AccountSessionManager();
 
   @override
   void initState() {
     super.initState();
     _initWebController();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<AppStore>().init();
+      context.read<AppStore>().init(sessionManager: _sessionManager);
     });
   }
 
@@ -92,6 +93,7 @@ class _HomePageState extends State<HomePage> {
                 BrowserScreen(
                   controller: _webController,
                   onBackToDashboard: () => _pageIndex.value = 0,
+                  sessionManager: _sessionManager,
                 ),
                 SettingsScreen(
                   onBack: () => _pageIndex.value = 0,

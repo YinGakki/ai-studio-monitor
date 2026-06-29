@@ -3,11 +3,14 @@ import 'package:flutter/material.dart';
 import 'db/database_helper.dart';
 import 'services/config_service.dart';
 import 'services/usage_extractor.dart';
+import 'services/account_session_manager.dart';
 import 'models/models.dart';
 
 /// 全局应用状态 - 对应原 AIFloatingWindow 的状态管理部分
 class AppStore extends ChangeNotifier {
   final ConfigService config = ConfigService();
+  AccountSessionManager? _sessionManager;
+  AccountSessionManager? get sessionManager => _sessionManager;
 
   // 面板数据
   List<UsageRecord> _latestUsage = [];
@@ -48,8 +51,13 @@ class AppStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> init() async {
+  Future<void> init({AccountSessionManager? sessionManager}) async {
+    _sessionManager = sessionManager;
     await config.load();
+    // 初始化会话管理器的当前账号
+    if (_sessionManager != null && config.accounts.isNotEmpty) {
+      _sessionManager!.setCurrent(config.accounts.first.name);
+    }
     await reloadUsage();
   }
 
@@ -127,6 +135,7 @@ class AppStore extends ChangeNotifier {
     final extractor = UsageExtractor(
       controller: controller,
       accounts: config.accounts,
+      sessionManager: _sessionManager,
       onProgress: (state) {
         switch (state) {
           case RefreshState.saved:

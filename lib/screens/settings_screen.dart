@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import '../app_store.dart';
 import '../theme/colors.dart';
 import '../utils/color_ext.dart';
+import '../services/native_cookie_manager.dart';
+import '../services/cookie_store.dart';
 
 /// 设置页面 - 管理账号/项目/监控模型/代理
 class SettingsScreen extends StatelessWidget {
@@ -73,9 +75,85 @@ class SettingsScreen extends StatelessWidget {
           _SectionTitle(title: '代理'),
           const SizedBox(height: 6),
           _ProxyField(),
+
+          const Divider(color: Color(0x14FFFFFF), height: 32),
+
+          // ── 账号会话 (Cookie 缓存) ──
+          _SectionTitle(title: '账号会话 (Cookie 缓存)'),
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.only(top: 4, bottom: 8),
+            child: Text(
+              '每个账号的登录 Cookie 单独存储。切换账号时自动恢复，'
+              '若登录态失效可在浏览器中重新登录后再次切换以刷新缓存。',
+              style: TextStyle(color: AppColors.fgDim.color, fontSize: 10),
+            ),
+          ),
+          Row(
+            children: [
+              TextButton.icon(
+                onPressed: () => _clearAllCookies(context),
+                icon: Icon(Icons.cleaning_services, size: 16, color: AppColors.warning.color),
+                label: Text('清除所有 Cookie 缓存',
+                    style: TextStyle(color: AppColors.warning.color, fontSize: 12)),
+              ),
+              const SizedBox(width: 8),
+              TextButton.icon(
+                onPressed: () => _clearWebViewCookies(context),
+                icon: Icon(Icons.logout, size: 16, color: AppColors.destructive.color),
+                label: Text('登出当前 WebView',
+                    style: TextStyle(color: AppColors.destructive.color, fontSize: 12)),
+              ),
+            ],
+          ),
         ],
       ),
     );
+  }
+
+  Future<void> _clearAllCookies(BuildContext context) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppColors.card.color,
+        title: Text('清除所有 Cookie 缓存', style: TextStyle(color: AppColors.fg.color, fontSize: 14)),
+        content: Text('将删除所有账号已保存的 Cookie 上下文。下次切换账号需要重新登录。是否继续？',
+            style: TextStyle(color: AppColors.fgMuted.color, fontSize: 12)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('取消', style: TextStyle(color: AppColors.fgMuted.color)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('确定', style: TextStyle(color: AppColors.warning.color)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await CookieStore.clearAll();
+    await NativeCookieManager.clearAll();
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('已清除所有 Cookie 缓存'),
+          backgroundColor: AppColors.success.color,
+        ),
+      );
+    }
+  }
+
+  Future<void> _clearWebViewCookies(BuildContext context) async {
+    await NativeCookieManager.clearAll();
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('已登出当前 WebView，请在浏览器中重新登录'),
+          backgroundColor: AppColors.info.color,
+        ),
+      );
+    }
   }
 
   void _showAddAccountDialog(BuildContext context) {
