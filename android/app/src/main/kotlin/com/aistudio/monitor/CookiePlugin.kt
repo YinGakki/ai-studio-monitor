@@ -24,9 +24,10 @@ class CookiePlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         channel = MethodChannel(binding.binaryMessenger, CHANNEL_NAME)
         channel.setMethodCallHandler(this)
-        // 确保接受第三方 Cookie（登录回调常用）
+        // 启用全局 Cookie 接受
         CookieManager.getInstance().setAcceptCookie(true)
-        CookieManager.getInstance().setAcceptThirdPartyCookies(binding.applicationContext, true)
+        // 注意：setAcceptThirdPartyCookies 需要 WebView 实例，
+        // 在插件层无法获取，由 WebView 在创建时自动配置。
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
