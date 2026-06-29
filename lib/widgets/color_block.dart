@@ -13,7 +13,7 @@ class ColorBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hasData = block.rpd != null && block.rpdMax != null;
-    final fs = 1.0; // 字体缩放因子
+    const fs = 1.0; // 字体缩放因子
 
     String bg;
     String fg;

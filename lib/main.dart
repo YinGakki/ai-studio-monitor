@@ -30,10 +30,8 @@ class AiStudioMonitorApp extends StatelessWidget {
           brightness: Brightness.dark,
           scaffoldBackgroundColor: AppColors.bg.color,
           colorScheme: ColorScheme.dark(
-            background: AppColors.bg.color,
             surface: AppColors.card.color,
             primary: AppColors.info.color,
-            onBackground: AppColors.fg.color,
             onSurface: AppColors.fg.color,
           ),
           appBarTheme: AppBarTheme(

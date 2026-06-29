@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 import 'db/database_helper.dart';
 import 'services/config_service.dart';
 import 'services/usage_extractor.dart';
@@ -10,6 +11,7 @@ import 'models/models.dart';
 class AppStore extends ChangeNotifier {
   final ConfigService config = ConfigService();
   AccountSessionManager? _sessionManager;
+  /// 公开访问器（避免 library_private_types_in_public_api 警告）
   AccountSessionManager? get sessionManager => _sessionManager;
 
   // 面板数据
@@ -38,14 +40,14 @@ class AppStore extends ChangeNotifier {
   String get statusText => _statusText;
 
   // 操作日志
-  final List<_OpLog> _logs = [];
-  List<_OpLog> get logs => List.unmodifiable(_logs);
+  final List<OpLog> _logs = [];
+  List<OpLog> get logs => List.unmodifiable(_logs);
 
   void _addLog(String type, String detail) {
     final now = DateTime.now();
     final time =
         '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
-    _logs.insert(0, _OpLog(time: time, type: type, detail: detail));
+    _logs.insert(0, OpLog(time: time, type: type, detail: detail));
     if (_logs.length > 200) _logs.removeRange(200, _logs.length);
     _statusText = detail;
     notifyListeners();
@@ -203,9 +205,9 @@ class AppStore extends ChangeNotifier {
   }
 }
 
-class _OpLog {
+class OpLog {
   final String time;
   final String type; // info/success/warn/error
   final String detail;
-  _OpLog({required this.time, required this.type, required this.detail});
+  OpLog({required this.time, required this.type, required this.detail});
 }
