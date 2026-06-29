@@ -1,0 +1,26 @@
+{
+    "accounts": [
+        {
+            "name": "默认账号",
+            "profile_dir": "profiles/default",
+            "proxy": "",
+            "projects": [
+                {
+                    "name": "project-1",
+                    "url": "https://aistudio.google.com/rate-limit?timeRange=last-1-day"
+                }
+            ],
+            "last_url": "https://aistudio.google.com/rate-limit?timeRange=last-1-day"
+        }
+    ],
+    "monitored_models": [
+        "Gemini 3.1 Flash Lite",
+        "Gemini 3.5 Flash",
+        "Gemini 3 Flash",
+        "Gemma 4 31B"
+    ],
+    "proxy": "127.0.0.1:7890",
+    "ui": {
+        "scale": 1.0
+    }
+}
