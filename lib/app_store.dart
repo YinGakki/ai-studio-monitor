@@ -213,34 +213,38 @@ class AppStore extends ChangeNotifier {
   // ---- 代理 ----
 
   /// 将配置中的代理应用到 WebView
-  /// 返回 true 表示应用成功
-  ///
-  /// 有凭证时原生层启动本地中转代理处理认证，
-  /// WebView 不会遇到 407，所有请求（含 JS）正常工作。
-  Future<bool> _applyProxy() async {
+  /// 返回 (成功, 消息)
+  Future<({bool ok, String msg})> _applyProxy() async {
     final proxy = config.proxy;
     if (proxy.isNotEmpty) {
-      return await NativeProxyManager.setProxy(
+      final result = await NativeProxyManager.setProxy(
         proxy,
         username: config.proxyUsername,
         password: config.proxyPassword,
       );
+      return (ok: result.success, msg: result.message);
     } else {
-      return await NativeProxyManager.clearProxy();
+      final ok = await NativeProxyManager.clearProxy();
+      return (ok: ok, msg: ok ? '已清除代理' : '清除代理失败');
     }
   }
 
   /// 更新代理配置（含凭证）并即时应用到 WebView
-  /// 返回 true 表示代理已生效
-  Future<bool> setProxy(String proxy,
+  /// 返回 (成功, 消息)，消息包含代理地址
+  Future<({bool ok, String msg})> setProxy(String proxy,
       {String? username, String? password}) async {
     await config.setProxy(proxy);
     if (username != null && password != null) {
       await config.setProxyCredentials(username, password);
     }
-    final ok = await _applyProxy();
+    final result = await _applyProxy();
     notifyListeners();
-    return ok;
+    // 消息中包含代理地址
+    final addr = proxy.isNotEmpty ? proxy : '直连';
+    final msg = result.ok
+        ? (proxy.isEmpty ? '已清除代理，恢复直连' : '代理已生效: $addr')
+        : '代理设置失败: $addr（${result.msg}）';
+    return (ok: result.ok, msg: msg);
   }
 
   /// 测试代理连通性

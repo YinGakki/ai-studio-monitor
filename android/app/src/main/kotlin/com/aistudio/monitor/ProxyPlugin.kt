@@ -107,7 +107,12 @@ class ProxyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
             ProxyController.getInstance().setProxyOverride(
                 config,
                 Executor { cmd -> cmd.run() },
-                Runnable { result.success(true) }
+                Runnable {
+                    result.success(mapOf(
+                        "success" to true,
+                        "message" to "代理已设置: $remoteHost:$remotePort"
+                    ))
+                }
             )
             return
         }
@@ -117,7 +122,10 @@ class ProxyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         val relay = LocalProxyRelay(remoteHost, remotePort, username, password)
         val localPort = relay.start()
         if (localPort < 0) {
-            result.error("proxy_error", "本地中转代理启动失败", null)
+            result.success(mapOf(
+                "success" to false,
+                "message" to "本地中转代理启动失败"
+            ))
             return
         }
         relayServer = relay
@@ -129,7 +137,12 @@ class ProxyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         ProxyController.getInstance().setProxyOverride(
             config,
             Executor { cmd -> cmd.run() },
-            Runnable { result.success(true) }
+            Runnable {
+                result.success(mapOf(
+                    "success" to true,
+                    "message" to "代理已设置: $remoteHost:$remotePort（中转 127.0.0.1:$localPort）"
+                ))
+            }
         )
     }
 

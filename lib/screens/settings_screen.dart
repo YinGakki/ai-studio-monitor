@@ -449,17 +449,16 @@ class _ProxySectionState extends State<_ProxySection> {
                 final proxy = proxyCtrl.text.trim();
                 final user = userCtrl.text.trim();
                 final pass = passCtrl.text;
-                final ok = await context
+                final result = await context
                     .read<AppStore>()
                     .setProxy(proxy, username: user, password: pass);
                 if (!context.mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text(ok
-                        ? (proxy.isEmpty ? '已清除代理，恢复直连' : '代理已生效: $proxy')
-                        : '代理保存失败，设备可能不支持'),
-                    backgroundColor:
-                        ok ? AppColors.success.color : AppColors.destructive.color,
+                    content: Text(result.msg),
+                    backgroundColor: result.ok
+                        ? AppColors.success.color
+                        : AppColors.destructive.color,
                   ),
                 );
               },
