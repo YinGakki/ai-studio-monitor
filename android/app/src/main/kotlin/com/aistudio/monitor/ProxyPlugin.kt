@@ -221,7 +221,8 @@ class LocalProxyRelay(
     private fun handleClient(client: Socket) {
         try {
             client.tcpNoDelay = true
-            client.soTimeout = 60000
+            // 读取请求行阶段设超时，CONNECT 隧道建立后由 handleConnect 重置为 0
+            client.soTimeout = 15000
             val input = client.getInputStream()
             val output = client.getOutputStream()
 
@@ -239,15 +240,14 @@ class LocalProxyRelay(
             }
 
             if (reqLine.startsWith("CONNECT ")) {
+                // CONNECT 隧道不需要 soTimeout
+                client.soTimeout = 0
                 handleConnect(client, reqLine, output)
             } else {
-                handleHttp(reqLine, headers, input, output)
+                handleHttp(reqLine, headers, input, output, client)
             }
         } catch (e: Exception) {
             Log.e(TAG, "处理请求失败", e)
-        } finally {
-            // 注意：CONNECT 隧道的 socket 由双向转发逻辑负责关闭
-            // 这里只关闭非 CONNECT 或异常情况的 socket
         }
     }
 
@@ -268,12 +268,15 @@ class LocalProxyRelay(
         val host = if (colonIdx > 0) target.substring(0, colonIdx) else target
         val port = if (colonIdx > 0) target.substring(colonIdx + 1).toIntOrNull() ?: 443 else 443
 
+        Log.i(TAG, "CONNECT $host:$port")
+
         // 连接真实代理
         val proxySock = Socket()
         try {
             proxySock.connect(InetSocketAddress(remoteHost, remotePort), 15000)
             proxySock.tcpNoDelay = true
-            proxySock.soTimeout = 60000
+            // 双向转发阶段不设 soTimeout，避免长连接被误断
+            proxySock.soTimeout = 0
         } catch (e: Exception) {
             Log.e(TAG, "连接真实代理失败: $remoteHost:$remotePort", e)
             output.write("HTTP/1.1 502 Bad Gateway\r\n\r\n".toByteArray())
@@ -294,10 +297,11 @@ class LocalProxyRelay(
         proxyOut.write(connectReq.toByteArray(Charsets.UTF_8))
         proxyOut.flush()
 
-        // 读取代理响应
+        // 读取代理响应（这里需要 soTimeout，设临时值）
+        proxySock.soTimeout = 15000
         val respLine = readLine(proxyIn)
         if (respLine == null || !respLine.contains("200")) {
-            Log.e(TAG, "代理拒绝 CONNECT: $respLine")
+            Log.e(TAG, "代理拒绝 CONNECT $host:$port: $respLine")
             output.write("HTTP/1.1 502 Bad Gateway\r\n\r\n".toByteArray())
             output.flush()
             client.close()
@@ -309,28 +313,32 @@ class LocalProxyRelay(
             val line = readLine(proxyIn) ?: break
             if (line.isEmpty()) break
         }
+        // 恢复无超时
+        proxySock.soTimeout = 0
 
         // 告诉 WebView 隧道已建立
         output.write("HTTP/1.1 200 Connection Established\r\n\r\n".toByteArray())
         output.flush()
 
+        Log.i(TAG, "隧道建立: $host:$port")
+
         // 双向转发 —— 阻塞直到任一方向结束
         val clientIn = client.getInputStream()
         bidirectionalRelay(client, proxySock, clientIn, proxyIn, output, proxyOut)
+
+        Log.i(TAG, "隧道关闭: $host:$port")
     }
 
     /**
      * 双向转发，阻塞直到任一方向的流结束
-     * 结束后关闭两侧 socket
+     * 任一方向结束后立即关闭两侧 socket，强制中断另一方向的 read
      */
     private fun bidirectionalRelay(
         client: Socket, proxy: Socket,
         clientIn: InputStream, proxyIn: InputStream,
         clientOut: OutputStream, proxyOut: OutputStream
     ) {
-        // 两个线程分别转发，任一结束则关闭全部
-        val done = java.util.concurrent.CountDownLatch(2)
-
+        // 任一方向结束就关闭两侧
         val t1 = Thread {
             try {
                 val buf = ByteArray(16384)
@@ -342,7 +350,8 @@ class LocalProxyRelay(
                 }
             } catch (_: Exception) {
             } finally {
-                done.countDown()
+                // client→proxy 方向结束，关闭 proxy 的输出端
+                try { proxy.shutdownOutput() } catch (_: Exception) {}
             }
         }
 
@@ -357,34 +366,35 @@ class LocalProxyRelay(
                 }
             } catch (_: Exception) {
             } finally {
-                done.countDown()
+                // proxy→client 方向结束，关闭 client 的输出端
+                try { client.shutdownOutput() } catch (_: Exception) {}
             }
         }
 
         t1.start()
         t2.start()
+        t1.join()
+        t2.join()
 
-        // 阻塞等待两个方向都结束
-        done.await()
-
-        // 关闭两侧
+        // 确保两侧完全关闭
         try { client.close() } catch (_: Exception) {}
         try { proxy.close() } catch (_: Exception) {}
     }
 
     /**
-     * 处理普通 HTTP 请求（转发）
+     * 处理普通 HTTP 请求（非 CONNECT）
      */
     private fun handleHttp(
         reqLine: String, headers: Map<String, String>,
-        input: InputStream, output: OutputStream
+        input: InputStream, output: OutputStream,
+        client: Socket
     ) {
-        // 普通 HTTP 转发（AI Studio 全站 HTTPS，主要走 CONNECT）
-        // 简单处理：返回 502
+        Log.w(TAG, "非 CONNECT 请求（返回 502）: $reqLine")
         try {
             output.write("HTTP/1.1 502 Bad Gateway\r\n\r\n".toByteArray())
             output.flush()
         } catch (_: Exception) {}
+        try { client.close() } catch (_: Exception) {}
     }
 
     /**
