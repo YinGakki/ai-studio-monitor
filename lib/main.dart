@@ -74,8 +74,7 @@ class _HomePageState extends State<HomePage> {
       ..enableZoom(false)
       ..setNavigationDelegate(NavigationDelegate(
         onHttpAuthRequest: (request) {
-          // 代理认证回调：配置了代理凭证时自动提交
-          context.read<AppStore>().proxyAuthCallback?.call(request);
+          context.read<AppStore>().proxyAuthCallback(request);
         },
       ));
   }

@@ -163,6 +163,11 @@ class AppStore extends ChangeNotifier {
 
     await extractor.refreshAll();
     await reloadUsage();
+    // 刷新会替换 NavigationDelegate，恢复一个含认证回调的默认 delegate
+    // 防止浏览器页面的 onPageFinished 等回调丢失
+    controller.setNavigationDelegate(NavigationDelegate(
+      onHttpAuthRequest: proxyAuthCallback,
+    ));
     _refreshing = false;
     final msg = _refreshFail == 0
         ? '刷新完成 ✓ $_refreshSuccess/$_refreshTotal'
@@ -244,18 +249,26 @@ class AppStore extends ChangeNotifier {
     );
   }
 
-  /// 创建 WebView 代理认证回调
-  /// 当代理需要密码（配置了 username）时返回回调，否则返回 null
-  /// 用于 NavigationDelegate.onHttpAuthRequest
-  void Function(HttpAuthRequest)? get proxyAuthCallback {
-    if (config.proxy.isEmpty) return null;
+  /// 创建 WebView HTTP 认证回调
+  ///
+  /// 当 WebView 收到 401/407 认证请求时调用。
+  /// - 配置了代理凭证：自动提交（onProceed）
+  /// - 未配置凭证：调用 onCancel 取消，避免请求挂起导致页面无响应
+  ///
+  /// 返回值始终非 null，确保 onHttpAuthRequest 回调不会让请求挂起。
+  void Function(HttpAuthRequest) get proxyAuthCallback {
     final user = config.proxyUsername;
-    if (user.isEmpty) return null;
     final pass = config.proxyPassword;
     return (HttpAuthRequest request) {
-      request.onProceed(
-        WebViewCredential(user: user, password: pass),
-      );
+      if (config.proxy.isNotEmpty && user.isNotEmpty) {
+        request.onProceed(
+          WebViewCredential(user: user, password: pass),
+        );
+      } else {
+        // 没有代理凭证时必须调用 onCancel，否则请求会挂起
+        // 导致页面"点下一步没反应"等问题
+        request.onCancel();
+      }
     };
   }
 }

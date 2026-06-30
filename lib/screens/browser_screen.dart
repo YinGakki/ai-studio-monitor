@@ -48,7 +48,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
         }
       },
       onHttpAuthRequest: (request) {
-        context.read<AppStore>().proxyAuthCallback?.call(request);
+        context.read<AppStore>().proxyAuthCallback(request);
       },
     ));
   }
