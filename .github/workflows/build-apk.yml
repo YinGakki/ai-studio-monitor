@@ -39,24 +39,35 @@ jobs:
       - name: Verify analysis
         run: flutter analyze --no-fatal-infos
 
+      - name: Set timestamp
+        id: ts
+        run: echo "stamp=$(TZ='Asia/Shanghai' date '+%Y%m%d-%H%M')" >> "$GITHUB_OUTPUT"
+
       - name: Build APK (debug)
         run: flutter build apk --debug --no-tree-shake-icons
 
       - name: Build APK (release)
         run: flutter build apk --release --no-tree-shake-icons
 
+      - name: Rename APKs with timestamp
+        run: |
+          mv build/app/outputs/flutter-apk/app-debug.apk \
+             build/app/outputs/flutter-apk/ai-studio-monitor-debug-${{ steps.ts.outputs.stamp }}.apk
+          mv build/app/outputs/flutter-apk/app-release.apk \
+             build/app/outputs/flutter-apk/ai-studio-monitor-release-${{ steps.ts.outputs.stamp }}.apk
+
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: ai-studio-monitor-debug
-          path: build/app/outputs/flutter-apk/app-debug.apk
+          name: ai-studio-monitor-debug-${{ steps.ts.outputs.stamp }}
+          path: build/app/outputs/flutter-apk/ai-studio-monitor-debug-${{ steps.ts.outputs.stamp }}.apk
           if-no-files-found: error
 
       - name: Upload release APK
         uses: actions/upload-artifact@v4
         with:
-          name: ai-studio-monitor-release
-          path: build/app/outputs/flutter-apk/app-release.apk
+          name: ai-studio-monitor-release-${{ steps.ts.outputs.stamp }}
+          path: build/app/outputs/flutter-apk/ai-studio-monitor-release-${{ steps.ts.outputs.stamp }}.apk
           if-no-files-found: error
 
       - name: Upload to Release (on tag)
@@ -64,6 +75,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            build/app/outputs/flutter-apk/app-debug.apk
-            build/app/outputs/flutter-apk/app-release.apk
+            build/app/outputs/flutter-apk/ai-studio-monitor-debug-${{ steps.ts.outputs.stamp }}.apk
+            build/app/outputs/flutter-apk/ai-studio-monitor-release-${{ steps.ts.outputs.stamp }}.apk
           generate_release_notes: true
