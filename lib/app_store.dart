@@ -5,6 +5,7 @@ import 'db/database_helper.dart';
 import 'services/config_service.dart';
 import 'services/usage_extractor.dart';
 import 'services/account_session_manager.dart';
+import 'services/native_proxy_manager.dart';
 import 'models/models.dart';
 
 /// 全局应用状态 - 对应原 AIFloatingWindow 的状态管理部分
@@ -56,6 +57,8 @@ class AppStore extends ChangeNotifier {
   Future<void> init({AccountSessionManager? sessionManager}) async {
     _sessionManager = sessionManager;
     await config.load();
+    // 应用 WebView 代理（手机不开 VPN 时通过代理访问 AI Studio）
+    await _applyProxy();
     // 初始化会话管理器的当前账号
     if (_sessionManager != null && config.accounts.isNotEmpty) {
       _sessionManager!.setCurrent(config.accounts.first.name);
@@ -202,6 +205,28 @@ class AppStore extends ChangeNotifier {
 
   Future<void> updateLastUrl(String acc, String url) async {
     await config.updateLastUrl(acc, url);
+  }
+
+  // ---- 代理 ----
+
+  /// 将配置中的代理应用到 WebView
+  /// 返回 true 表示应用成功
+  Future<bool> _applyProxy() async {
+    final proxy = config.proxy;
+    if (proxy.isNotEmpty) {
+      return await NativeProxyManager.setProxy(proxy);
+    } else {
+      return await NativeProxyManager.clearProxy();
+    }
+  }
+
+  /// 更新代理配置并即时应用到 WebView（设置页保存时调用）
+  /// 返回 true 表示代理已生效
+  Future<bool> setProxy(String proxy) async {
+    await config.setProxy(proxy);
+    final ok = await _applyProxy();
+    notifyListeners();
+    return ok;
   }
 }
 
