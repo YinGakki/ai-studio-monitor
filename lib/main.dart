@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'app_store.dart';
 import 'theme/colors.dart';
 import 'utils/color_ext.dart';
@@ -72,6 +73,13 @@ class _HomePageState extends State<HomePage> {
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(AppColors.bg.color)
       ..enableZoom(false);
+
+    // Android 平台特定配置：启用第三方 Cookie（Google 登录必需）
+    final platform = _webController.platform;
+    if (platform is AndroidWebViewController) {
+      platform.setAndroidWebViewDebuggingEnabled(true);
+      AndroidCookieManager().setAcceptThirdPartyCookies(_webController, true);
+    }
   }
 
   @override
