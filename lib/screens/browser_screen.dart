@@ -47,7 +47,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
           store.updateLastUrl(acc, url);
         }
       },
-      onHttpAuthRequest: store.proxyAuthCallback,
     ));
   }
 

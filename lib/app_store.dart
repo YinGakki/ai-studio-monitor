@@ -142,7 +142,6 @@ class AppStore extends ChangeNotifier {
       controller: controller,
       accounts: config.accounts,
       sessionManager: _sessionManager,
-      onHttpAuthRequest: proxyAuthCallback,
       onProgress: (state) {
         switch (state) {
           case RefreshState.saved:
@@ -163,11 +162,8 @@ class AppStore extends ChangeNotifier {
 
     await extractor.refreshAll();
     await reloadUsage();
-    // 刷新会替换 NavigationDelegate，恢复一个含认证回调的默认 delegate
-    // 防止浏览器页面的 onPageFinished 等回调丢失
-    controller.setNavigationDelegate(NavigationDelegate(
-      onHttpAuthRequest: proxyAuthCallback,
-    ));
+    // 刷新会替换 NavigationDelegate，恢复默认 delegate
+    controller.setNavigationDelegate(NavigationDelegate());
     _refreshing = false;
     final msg = _refreshFail == 0
         ? '刷新完成 ✓ $_refreshSuccess/$_refreshTotal'
@@ -219,12 +215,16 @@ class AppStore extends ChangeNotifier {
   /// 将配置中的代理应用到 WebView
   /// 返回 true 表示应用成功
   ///
-  /// 仅传纯 host:port 给 addProxyRule（不支持 user:pass@ 格式），
-  /// 代理认证由 onHttpAuthRequest 回调处理（proxyAuthCallback）。
+  /// 有凭证时原生层启动本地中转代理处理认证，
+  /// WebView 不会遇到 407，所有请求（含 JS）正常工作。
   Future<bool> _applyProxy() async {
     final proxy = config.proxy;
     if (proxy.isNotEmpty) {
-      return await NativeProxyManager.setProxy(proxy);
+      return await NativeProxyManager.setProxy(
+        proxy,
+        username: config.proxyUsername,
+        password: config.proxyPassword,
+      );
     } else {
       return await NativeProxyManager.clearProxy();
     }
@@ -250,26 +250,6 @@ class AppStore extends ChangeNotifier {
       username: config.proxyUsername,
       password: config.proxyPassword,
     );
-  }
-
-  /// 创建 WebView HTTP 认证回调
-  ///
-  /// 仅当配置了代理且填写了用户名时返回回调，否则返回 null。
-  /// 返回 null 时 NavigationDelegate 不会设置 onHttpAuthRequest，
-  /// WebView 使用默认行为处理 401/407，不干预正常登录流程。
-  ///
-  /// 注意：无凭证时绝不能调用 onCancel，否则会取消 Google 登录流程中
-  /// 返回 401 的子请求，导致 JS 静默失败、页面"点下一步没反应"。
-  void Function(HttpAuthRequest)? get proxyAuthCallback {
-    if (config.proxy.isEmpty) return null;
-    final user = config.proxyUsername;
-    if (user.isEmpty) return null;
-    final pass = config.proxyPassword;
-    return (HttpAuthRequest request) {
-      request.onProceed(
-        WebViewCredential(user: user, password: pass),
-      );
-    };
   }
 }
 

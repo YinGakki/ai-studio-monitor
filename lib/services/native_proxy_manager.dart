@@ -6,27 +6,31 @@ import 'package:flutter/services.dart';
 /// 为 WebView 设置全局 HTTP 代理，使所有网络请求（含 JS 发起的）走指定代理。
 /// 手机不开 VPN 时，配置局域网/远程代理即可访问 AI Studio。
 ///
-/// 代理规则格式（与 AndroidX ProxyConfig.addProxyRule 一致）：
+/// 代理规则格式：
 ///   - "ying.host:7890"            → 默认 HTTP 代理
 ///   - "http://ying.host:7890"     → 显式 HTTP 代理
-///   - "socks5://ying.host:7890"   → SOCKS5 代理
 ///
-/// 注意：addProxyRule 只接受 [scheme://]host[:port]，不支持 user:pass@ 格式。
-/// 代理认证凭证通过 onHttpAuthRequest 回调提交（见 AppStore.proxyAuthCallback）。
+/// 代理认证：
+///   有凭证时原生层启动本地中转代理（127.0.0.1:随机端口），
+///   WebView 连本地代理（无认证），本地代理再连真实代理（带认证）。
+///   这样 WebView 永远不会遇到 407，所有请求（含 JS fetch/XHR）都能正常工作。
 class NativeProxyManager {
   static const _channel = MethodChannel('ai_studio_monitor/proxy');
 
   /// 设置 WebView 代理。
   ///
   /// [proxyRule] 如 "ying.host:7890"；传空字符串等效于清除代理（恢复直连）。
-  /// 返回 true 表示设置成功；false 表示失败（设备不支持或通道异常）。
-  ///
-  /// 代理认证由 onHttpAuthRequest 回调处理，不在此方法传入凭证
-  /// （addProxyRule 不支持 user:pass@host:port 格式）。
-  static Future<bool> setProxy(String proxyRule) async {
+  /// [username]/[password] 可选，有凭证时原生层自动启动本地中转代理处理认证。
+  static Future<bool> setProxy(
+    String proxyRule, {
+    String? username,
+    String? password,
+  }) async {
     try {
       final result = await _channel.invokeMethod<bool>('setProxy', {
         'proxyRule': proxyRule,
+        'username': username ?? '',
+        'password': password ?? '',
       });
       return result ?? false;
     } on PlatformException catch (e) {
