@@ -74,12 +74,8 @@ class _HomePageState extends State<HomePage> {
       ..setBackgroundColor(AppColors.bg.color)
       ..enableZoom(false);
 
-    // Android 平台特定配置：启用第三方 Cookie（Google 登录必需）
-    final platform = _webController.platform;
-    if (platform is AndroidWebViewController) {
-      platform.setAndroidWebViewDebuggingEnabled(true);
-      AndroidCookieManager().setAcceptThirdPartyCookies(_webController, true);
-    }
+    // Android 平台特定配置：启用远程调试（chrome://inspect）
+    AndroidWebViewController.enableDebugging(true);
   }
 
   @override
