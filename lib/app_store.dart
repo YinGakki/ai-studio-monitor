@@ -218,15 +218,13 @@ class AppStore extends ChangeNotifier {
 
   /// 将配置中的代理应用到 WebView
   /// 返回 true 表示应用成功
+  ///
+  /// 仅传纯 host:port 给 addProxyRule（不支持 user:pass@ 格式），
+  /// 代理认证由 onHttpAuthRequest 回调处理（proxyAuthCallback）。
   Future<bool> _applyProxy() async {
     final proxy = config.proxy;
     if (proxy.isNotEmpty) {
-      // 有凭证时拼入 URL，确保 JS 子请求也携带认证
-      return await NativeProxyManager.setProxy(
-        proxy,
-        username: config.proxyUsername,
-        password: config.proxyPassword,
-      );
+      return await NativeProxyManager.setProxy(proxy);
     } else {
       return await NativeProxyManager.clearProxy();
     }
