@@ -73,7 +73,14 @@ class SettingsScreen extends StatelessWidget {
 
           // ── 代理 ──
           _SectionTitle(title: '代理'),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Text(
+              '填写后不开 VPN 也可访问 AI Studio；留空恢复直连。格式：host:port',
+              style: TextStyle(color: AppColors.fgDim.color, fontSize: 10),
+            ),
+          ),
           _ProxyField(),
 
           const Divider(color: Color(0x14FFFFFF), height: 32),
@@ -405,7 +412,7 @@ class _ProxyFieldState extends State<_ProxyField> {
           child: TextField(
             controller: ctrl,
             decoration: InputDecoration(
-              hintText: '如 127.0.0.1:7890',
+              hintText: '如 ying.host:7890',
               hintStyle: TextStyle(color: AppColors.fgDim.color, fontSize: 12),
               enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: AppColors.borderSolid.color)),
               focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: AppColors.info.color)),
@@ -415,10 +422,18 @@ class _ProxyFieldState extends State<_ProxyField> {
         ),
         const SizedBox(width: 8),
         TextButton(
-          onPressed: () {
-            context.read<AppStore>().config.setProxy(ctrl.text.trim());
+          onPressed: () async {
+            final proxy = ctrl.text.trim();
+            final ok = await context.read<AppStore>().setProxy(proxy);
+            if (!context.mounted) return;
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('代理已保存'), backgroundColor: AppColors.success.color),
+              SnackBar(
+                content: Text(ok
+                    ? (proxy.isEmpty ? '已清除代理，恢复直连' : '代理已生效: $proxy')
+                    : '代理保存失败，设备可能不支持'),
+                backgroundColor:
+                    ok ? AppColors.success.color : AppColors.destructive.color,
+              ),
             );
           },
           child: Text('保存', style: TextStyle(color: AppColors.info.color, fontSize: 12)),

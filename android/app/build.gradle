@@ -53,4 +53,8 @@ flutter {
     source = "../.."
 }
 
-dependencies {}
+dependencies {
+    // AndroidX WebKit - 提供 ProxyController 用于设置 WebView 全局代理
+    // （webview_flutter_android 传递依赖了它，但用 implementation 不可见，需显式声明）
+    implementation 'androidx.webkit:webkit:1.8.0'
+}
