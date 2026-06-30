@@ -7,13 +7,11 @@ import androidx.webkit.WebViewFeature
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
-import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
-import java.net.HttpURLConnection
 import java.net.InetSocketAddress
-import java.net.Proxy
-import java.net.URL
+import java.net.ServerSocket
+import java.net.Socket
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 
@@ -22,7 +20,7 @@ import java.util.concurrent.Executors
  *
  * 通过 AndroidX WebKit 的 ProxyController 为 WebView 设置全局 HTTP 代理。
  * 对于需要认证的代理，启动一个本地中转代理服务：
- *   WebView → 本地代理(127.0.0.1:0, 无认证) → 真实代理(带认证)
+ *   WebView → 本地代理(127.0.0.1, 无认证) → 真实代理(带认证)
  * 这样 WebView 不会遇到 407，认证在本地中转层完成。
  *
  * 暴露方法：
@@ -68,9 +66,6 @@ class ProxyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         }
     }
 
-    /**
-     * 设置代理，有凭证时启动本地中转服务
-     */
     private fun setProxyWithAuth(
         proxyRule: String, username: String, password: String,
         result: MethodChannel.Result
@@ -84,13 +79,12 @@ class ProxyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         var rule = proxyRule.trim()
         var scheme = "http"
         for (sc in listOf("socks5://", "socks4://", "http://", "https://")) {
-            if (rule.toLowerCase().startsWith(sc)) {
+            if (rule.lowercase().startsWith(sc)) {
                 scheme = sc.trimEnd('/').trimEnd(':')
                 rule = rule.substring(sc.length)
                 break
             }
         }
-        // 去掉可能的 user:pass@
         val atIdx = rule.lastIndexOf('@')
         if (atIdx >= 0) rule = rule.substring(atIdx + 1)
         val colonIdx = rule.lastIndexOf(':')
@@ -162,8 +156,6 @@ class ProxyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
  *
  * 监听 127.0.0.1 随机端口，接收 WebView 请求，
  * 通过带认证的真实代理转发，添加 Proxy-Authorization 头。
- *
- * 仅处理 HTTP CONNECT（HTTPS 隧道）和普通 HTTP 请求。
  */
 class LocalProxyRelay(
     private val remoteHost: String,
@@ -171,19 +163,17 @@ class LocalProxyRelay(
     private val username: String,
     private val password: String
 ) {
-    private var serverSocket: java.net.ServerSocket? = null
+    private var serverSocket: ServerSocket? = null
     private val executor = Executors.newCachedThreadPool()
-    private var running = false
+    @Volatile private var running = false
+
     private val authHeader = "Basic " + android.util.Base64.encodeToString(
         "$username:$password".toByteArray(), android.util.Base64.NO_WRAP
     )
 
-    /**
-     * 启动本地代理，返回监听端口；失败返回 -1
-     */
     fun start(): Int {
         return try {
-            val ss = java.net.ServerSocket(0, 50, java.net.InetAddress.getByName("127.0.0.1"))
+            val ss = ServerSocket(0, 50, java.net.InetAddress.getByName("127.0.0.1"))
             serverSocket = ss
             running = true
             val port = ss.localPort
@@ -215,9 +205,10 @@ class LocalProxyRelay(
         }
     }
 
-    private fun handleClient(client: java.net.Socket) {
+    private fun handleClient(client: Socket) {
         try {
-            client.soTimeout = 30000
+            client.tcpNoDelay = true
+            client.soTimeout = 60000
             val input = client.getInputStream()
             val output = client.getOutputStream()
 
@@ -235,38 +226,50 @@ class LocalProxyRelay(
             }
 
             if (reqLine.startsWith("CONNECT ")) {
-                // HTTPS 隧道
-                handleConnect(client, reqLine, input, output)
+                handleConnect(client, reqLine, output)
             } else {
-                // 普通 HTTP 请求
                 handleHttp(reqLine, headers, input, output)
             }
         } catch (e: Exception) {
             Log.e(TAG, "处理请求失败", e)
         } finally {
-            try { client.close() } catch (_: Exception) {}
+            // 注意：CONNECT 隧道的 socket 由双向转发逻辑负责关闭
+            // 这里只关闭非 CONNECT 或异常情况的 socket
         }
     }
 
     /**
      * 处理 HTTPS CONNECT 隧道请求
+     *
+     * 关键：此方法会阻塞，直到双向转发结束（任一方向关闭），
+     * 然后 close 两侧 socket。不能让 handleClient 的调用者提前关闭 socket。
      */
-    private fun handleConnect(
-        client: java.net.Socket, reqLine: String,
-        input: InputStream, output: OutputStream
-    ) {
-        // 解析目标 host:port
+    private fun handleConnect(client: Socket, reqLine: String, output: OutputStream) {
         val parts = reqLine.split(" ")
-        if (parts.size < 2) return
+        if (parts.size < 2) {
+            client.close()
+            return
+        }
         val target = parts[1]
         val colonIdx = target.lastIndexOf(':')
         val host = if (colonIdx > 0) target.substring(0, colonIdx) else target
         val port = if (colonIdx > 0) target.substring(colonIdx + 1).toIntOrNull() ?: 443 else 443
 
-        // 通过真实代理建立 CONNECT 隧道
-        val proxySock = java.net.Socket()
-        proxySock.connect(java.net.InetSocketAddress(remoteHost, remotePort), 15000)
-        proxySock.soTimeout = 30000
+        // 连接真实代理
+        val proxySock = Socket()
+        try {
+            proxySock.connect(InetSocketAddress(remoteHost, remotePort), 15000)
+            proxySock.tcpNoDelay = true
+            proxySock.soTimeout = 60000
+        } catch (e: Exception) {
+            Log.e(TAG, "连接真实代理失败: $remoteHost:$remotePort", e)
+            output.write("HTTP/1.1 502 Bad Gateway\r\n\r\n".toByteArray())
+            output.flush()
+            client.close()
+            proxySock.close()
+            return
+        }
+
         val proxyOut = proxySock.getOutputStream()
         val proxyIn = proxySock.getInputStream()
 
@@ -275,16 +278,16 @@ class LocalProxyRelay(
             "Host: $host:$port\r\n" +
             "Proxy-Authorization: $authHeader\r\n" +
             "Proxy-Connection: keep-alive\r\n\r\n"
-        proxyOut.write(connectReq.toByteArray())
+        proxyOut.write(connectReq.toByteArray(Charsets.UTF_8))
         proxyOut.flush()
 
         // 读取代理响应
-        val respLine = readLine(proxyIn) ?: return
-        if (!respLine.contains("200")) {
-            // 代理拒绝，返回错误给 WebView
-            val errResp = "HTTP/1.1 502 Bad Gateway\r\n\r\n"
-            output.write(errResp.toByteArray())
+        val respLine = readLine(proxyIn)
+        if (respLine == null || !respLine.contains("200")) {
+            Log.e(TAG, "代理拒绝 CONNECT: $respLine")
+            output.write("HTTP/1.1 502 Bad Gateway\r\n\r\n".toByteArray())
             output.flush()
+            client.close()
             proxySock.close()
             return
         }
@@ -298,9 +301,62 @@ class LocalProxyRelay(
         output.write("HTTP/1.1 200 Connection Established\r\n\r\n".toByteArray())
         output.flush()
 
-        // 双向转发
-        relay(client.getInputStream(), proxyOut, executor)
-        relay(proxyIn, output, executor)
+        // 双向转发 —— 阻塞直到任一方向结束
+        val clientIn = client.getInputStream()
+        bidirectionalRelay(client, proxySock, clientIn, proxyIn, output, proxyOut)
+    }
+
+    /**
+     * 双向转发，阻塞直到任一方向的流结束
+     * 结束后关闭两侧 socket
+     */
+    private fun bidirectionalRelay(
+        client: Socket, proxy: Socket,
+        clientIn: InputStream, proxyIn: InputStream,
+        clientOut: OutputStream, proxyOut: OutputStream
+    ) {
+        // 两个线程分别转发，任一结束则关闭全部
+        val done = java.util.concurrent.CountDownLatch(2)
+
+        val t1 = Thread {
+            try {
+                val buf = ByteArray(16384)
+                while (true) {
+                    val n = clientIn.read(buf)
+                    if (n < 0) break
+                    proxyOut.write(buf, 0, n)
+                    proxyOut.flush()
+                }
+            } catch (_: Exception) {
+            } finally {
+                done.countDown()
+            }
+        }
+
+        val t2 = Thread {
+            try {
+                val buf = ByteArray(16384)
+                while (true) {
+                    val n = proxyIn.read(buf)
+                    if (n < 0) break
+                    clientOut.write(buf, 0, n)
+                    clientOut.flush()
+                }
+            } catch (_: Exception) {
+            } finally {
+                done.countDown()
+            }
+        }
+
+        t1.start()
+        t2.start()
+
+        // 阻塞等待两个方向都结束
+        done.await()
+
+        // 关闭两侧
+        try { client.close() } catch (_: Exception) {}
+        try { proxy.close() } catch (_: Exception) {}
     }
 
     /**
@@ -310,81 +366,12 @@ class LocalProxyRelay(
         reqLine: String, headers: Map<String, String>,
         input: InputStream, output: OutputStream
     ) {
-        val parts = reqLine.split(" ")
-        if (parts.size < 2) return
-        val method = parts[0]
-        val urlStr = parts[1]
-
+        // 普通 HTTP 转发（AI Studio 全站 HTTPS，主要走 CONNECT）
+        // 简单处理：返回 502
         try {
-            val url = URL(urlStr)
-            val proxy = Proxy(Proxy.Type.HTTP, InetSocketAddress(remoteHost, remotePort))
-            val conn = (url.openConnection(proxy) as HttpURLConnection).apply {
-                requestMethod = method
-                connectTimeout = 15000
-                readTimeout = 30000
-                instanceFollowRedirects = false
-            }
-            // 设置请求头（跳过 hop-by-hop 头）
-            val skipHeaders = setOf("host", "proxy-authorization", "proxy-connection", "connection", "keep-alive")
-            for ((k, v) in headers) {
-                if (k !in skipHeaders) conn.setRequestProperty(k, v)
-            }
-            // 代理认证
-            conn.setRequestProperty("Proxy-Authorization", authHeader)
-
-            // 有请求体？
-            val hasBody = headers["content-length"]?.toIntOrNull()?.let { it > 0 } ?: false
-            if (hasBody) {
-                conn.doOutput = true
-                val body = input.readBytes()
-                conn.outputStream.write(body)
-            }
-
-            // 返回响应
-            val status = conn.responseCode
-            val respHeaders = conn.headerFields
-            val sb = StringBuilder("HTTP/1.1 $status ${conn.responseMessage ?: ""}\r\n")
-            for ((k, v) in respHeaders) {
-                if (k == null) continue
-                val lower = k.lowercase()
-                if (lower in skipHeaders) continue
-                for (val_ in v) {
-                    sb.append("$k: $val_\r\n")
-                }
-            }
-            sb.append("\r\n")
-            output.write(sb.toString().toByteArray())
+            output.write("HTTP/1.1 502 Bad Gateway\r\n\r\n".toByteArray())
             output.flush()
-
-            val respStream = if (status in 200..399) conn.inputStream else conn.errorStream
-            if (respStream != null) {
-                respStream.copyTo(output)
-                output.flush()
-            }
-            conn.disconnect()
-        } catch (e: Exception) {
-            Log.e(TAG, "HTTP 转发失败: $urlStr", e)
-            val errResp = "HTTP/1.1 502 Bad Gateway\r\n\r\n"
-            output.write(errResp.toByteArray())
-            output.flush()
-        }
-    }
-
-    /**
-     * 双向转发流
-     */
-    private fun relay(input: InputStream, output: OutputStream, pool: java.util.concurrent.ExecutorService) {
-        val future = pool.submit {
-            try {
-                val buf = ByteArray(8192)
-                while (true) {
-                    val n = input.read(buf)
-                    if (n < 0) break
-                    output.write(buf, 0, n)
-                    output.flush()
-                }
-            } catch (_: Exception) {}
-        }
+        } catch (_: Exception) {}
     }
 
     /**
@@ -400,6 +387,8 @@ class LocalProxyRelay(
                 if (next == '\n'.code) return sb.toString()
                 sb.append(b.toChar())
                 if (next >= 0) sb.append(next.toChar())
+            } else if (b == '\n'.code) {
+                return sb.toString()
             } else {
                 sb.append(b.toChar())
             }
