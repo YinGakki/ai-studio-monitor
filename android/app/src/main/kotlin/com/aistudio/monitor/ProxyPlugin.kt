@@ -53,9 +53,14 @@ class ProxyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                         return
                     }
                     val proxyController = ProxyController.getInstance()
-                    // addProxyRule 接受 "[scheme://]host[:port]"，无 scheme 时默认 HTTP
+                    // addProxyRule 要求 scheme://host:port 格式
+                    // 用户可能只输入 host:port，自动补全 http:// scheme
+                    var rule = proxyRule.trim()
+                    if (!rule.contains("://")) {
+                        rule = "http://$rule"
+                    }
                     val config = ProxyConfig.Builder()
-                        .addProxyRule(proxyRule.trim())
+                        .addProxyRule(rule)
                         .build()
                     // setProxyOverride 需要 Executor + Runnable，Executor 同步执行确保回调在主线程
                     proxyController.setProxyOverride(
