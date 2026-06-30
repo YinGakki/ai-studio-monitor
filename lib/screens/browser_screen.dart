@@ -37,19 +37,17 @@ class _BrowserScreenState extends State<BrowserScreen> {
   }
 
   void _setupUrlTracking() {
+    final store = context.read<AppStore>();
     widget.controller.setNavigationDelegate(NavigationDelegate(
       onPageFinished: (url) {
         if (!mounted) return;
         setState(() => _currentUrl = url);
-        final store = context.read<AppStore>();
         final acc = widget.sessionManager.currentAccount;
         if (acc.isNotEmpty) {
           store.updateLastUrl(acc, url);
         }
       },
-      onHttpAuthRequest: (request) {
-        context.read<AppStore>().proxyAuthCallback(request);
-      },
+      onHttpAuthRequest: store.proxyAuthCallback,
     ));
   }
 

@@ -71,12 +71,7 @@ class _HomePageState extends State<HomePage> {
     _webController = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(AppColors.bg.color)
-      ..enableZoom(false)
-      ..setNavigationDelegate(NavigationDelegate(
-        onHttpAuthRequest: (request) {
-          context.read<AppStore>().proxyAuthCallback(request);
-        },
-      ));
+      ..enableZoom(false);
   }
 
   @override

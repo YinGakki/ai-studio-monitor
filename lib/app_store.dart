@@ -251,24 +251,21 @@ class AppStore extends ChangeNotifier {
 
   /// 创建 WebView HTTP 认证回调
   ///
-  /// 当 WebView 收到 401/407 认证请求时调用。
-  /// - 配置了代理凭证：自动提交（onProceed）
-  /// - 未配置凭证：调用 onCancel 取消，避免请求挂起导致页面无响应
+  /// 仅当配置了代理且填写了用户名时返回回调，否则返回 null。
+  /// 返回 null 时 NavigationDelegate 不会设置 onHttpAuthRequest，
+  /// WebView 使用默认行为处理 401/407，不干预正常登录流程。
   ///
-  /// 返回值始终非 null，确保 onHttpAuthRequest 回调不会让请求挂起。
-  void Function(HttpAuthRequest) get proxyAuthCallback {
+  /// 注意：无凭证时绝不能调用 onCancel，否则会取消 Google 登录流程中
+  /// 返回 401 的子请求，导致 JS 静默失败、页面"点下一步没反应"。
+  void Function(HttpAuthRequest)? get proxyAuthCallback {
+    if (config.proxy.isEmpty) return null;
     final user = config.proxyUsername;
+    if (user.isEmpty) return null;
     final pass = config.proxyPassword;
     return (HttpAuthRequest request) {
-      if (config.proxy.isNotEmpty && user.isNotEmpty) {
-        request.onProceed(
-          WebViewCredential(user: user, password: pass),
-        );
-      } else {
-        // 没有代理凭证时必须调用 onCancel，否则请求会挂起
-        // 导致页面"点下一步没反应"等问题
-        request.onCancel();
-      }
+      request.onProceed(
+        WebViewCredential(user: user, password: pass),
+      );
     };
   }
 }
