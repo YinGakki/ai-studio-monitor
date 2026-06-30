@@ -254,7 +254,7 @@ class AppStore extends ChangeNotifier {
     final pass = config.proxyPassword;
     return (HttpAuthRequest request) {
       request.onProceed(
-        WebViewCredential(username: user, password: pass),
+        WebViewCredential(user: user, password: pass),
       );
     };
   }

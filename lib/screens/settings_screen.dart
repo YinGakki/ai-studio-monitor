@@ -5,7 +5,6 @@ import '../theme/colors.dart';
 import '../utils/color_ext.dart';
 import '../services/native_cookie_manager.dart';
 import '../services/cookie_store.dart';
-import '../services/proxy_tester.dart';
 
 /// 设置页面 - 管理账号/项目/监控模型/代理
 class SettingsScreen extends StatelessWidget {
