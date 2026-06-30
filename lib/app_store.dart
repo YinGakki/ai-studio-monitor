@@ -221,7 +221,12 @@ class AppStore extends ChangeNotifier {
   Future<bool> _applyProxy() async {
     final proxy = config.proxy;
     if (proxy.isNotEmpty) {
-      return await NativeProxyManager.setProxy(proxy);
+      // 有凭证时拼入 URL，确保 JS 子请求也携带认证
+      return await NativeProxyManager.setProxy(
+        proxy,
+        username: config.proxyUsername,
+        password: config.proxyPassword,
+      );
     } else {
       return await NativeProxyManager.clearProxy();
     }
