@@ -71,7 +71,13 @@ class _HomePageState extends State<HomePage> {
     _webController = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(AppColors.bg.color)
-      ..enableZoom(false);
+      ..enableZoom(false)
+      ..setNavigationDelegate(NavigationDelegate(
+        onHttpAuthRequest: (request) {
+          // 代理认证回调：配置了代理凭证时自动提交
+          context.read<AppStore>().proxyAuthCallback?.call(request);
+        },
+      ));
   }
 
   @override

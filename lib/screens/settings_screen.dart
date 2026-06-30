@@ -5,6 +5,7 @@ import '../theme/colors.dart';
 import '../utils/color_ext.dart';
 import '../services/native_cookie_manager.dart';
 import '../services/cookie_store.dart';
+import '../services/proxy_tester.dart';
 
 /// 设置页面 - 管理账号/项目/监控模型/代理
 class SettingsScreen extends StatelessWidget {
@@ -81,7 +82,7 @@ class SettingsScreen extends StatelessWidget {
               style: TextStyle(color: AppColors.fgDim.color, fontSize: 10),
             ),
           ),
-          _ProxyField(),
+          _ProxySection(),
 
           const Divider(color: Color(0x14FFFFFF), height: 32),
 
@@ -381,63 +382,203 @@ class _AccountTile extends StatelessWidget {
   }
 }
 
-class _ProxyField extends StatefulWidget {
+class _ProxySection extends StatefulWidget {
   @override
-  State<_ProxyField> createState() => _ProxyFieldState();
+  State<_ProxySection> createState() => _ProxySectionState();
 }
 
-class _ProxyFieldState extends State<_ProxyField> {
-  TextEditingController? _ctrl;
+class _ProxySectionState extends State<_ProxySection> {
+  TextEditingController? _proxyCtrl;
+  TextEditingController? _userCtrl;
+  TextEditingController? _passCtrl;
+  bool _obscurePass = true;
+  bool _testing = false;
+  String? _testResult;
+  bool? _testSuccess;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final store = context.read<AppStore>();
-    _ctrl ??= TextEditingController(text: store.config.proxy);
+    _proxyCtrl ??= TextEditingController(text: store.config.proxy);
+    _userCtrl ??= TextEditingController(text: store.config.proxyUsername);
+    _passCtrl ??= TextEditingController(text: store.config.proxyPassword);
   }
 
   @override
   void dispose() {
-    _ctrl?.dispose();
+    _proxyCtrl?.dispose();
+    _userCtrl?.dispose();
+    _passCtrl?.dispose();
     super.dispose();
   }
 
+  InputDecoration _decoration(String hint) => InputDecoration(
+        hintText: hint,
+        hintStyle: TextStyle(color: AppColors.fgDim.color, fontSize: 12),
+        enabledBorder: UnderlineInputBorder(
+            borderSide: BorderSide(color: AppColors.borderSolid.color)),
+        focusedBorder: UnderlineInputBorder(
+            borderSide: BorderSide(color: AppColors.info.color)),
+      );
+
   @override
   Widget build(BuildContext context) {
-    final ctrl = _ctrl;
-    if (ctrl == null) return const SizedBox.shrink();
-    return Row(
+    final proxyCtrl = _proxyCtrl;
+    final userCtrl = _userCtrl;
+    final passCtrl = _passCtrl;
+    if (proxyCtrl == null || userCtrl == null || passCtrl == null) {
+      return const SizedBox.shrink();
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          child: TextField(
-            controller: ctrl,
-            decoration: InputDecoration(
-              hintText: '如 ying.host:7890',
-              hintStyle: TextStyle(color: AppColors.fgDim.color, fontSize: 12),
-              enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: AppColors.borderSolid.color)),
-              focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: AppColors.info.color)),
-            ),
-            style: TextStyle(color: AppColors.fg.color, fontSize: 12, fontFamily: 'monospace'),
-          ),
-        ),
-        const SizedBox(width: 8),
-        TextButton(
-          onPressed: () async {
-            final proxy = ctrl.text.trim();
-            final ok = await context.read<AppStore>().setProxy(proxy);
-            if (!context.mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(ok
-                    ? (proxy.isEmpty ? '已清除代理，恢复直连' : '代理已生效: $proxy')
-                    : '代理保存失败，设备可能不支持'),
-                backgroundColor:
-                    ok ? AppColors.success.color : AppColors.destructive.color,
+        // 代理地址 + 保存按钮
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: proxyCtrl,
+                decoration: _decoration('如 ying.host:7890'),
+                style: TextStyle(
+                    color: AppColors.fg.color, fontSize: 12, fontFamily: 'monospace'),
               ),
-            );
-          },
-          child: Text('保存', style: TextStyle(color: AppColors.info.color, fontSize: 12)),
+            ),
+            const SizedBox(width: 8),
+            TextButton(
+              onPressed: () async {
+                final proxy = proxyCtrl.text.trim();
+                final user = userCtrl.text.trim();
+                final pass = passCtrl.text;
+                final ok = await context
+                    .read<AppStore>()
+                    .setProxy(proxy, username: user, password: pass);
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(ok
+                        ? (proxy.isEmpty ? '已清除代理，恢复直连' : '代理已生效: $proxy')
+                        : '代理保存失败，设备可能不支持'),
+                    backgroundColor:
+                        ok ? AppColors.success.color : AppColors.destructive.color,
+                  ),
+                );
+              },
+              child: Text('保存', style: TextStyle(color: AppColors.info.color, fontSize: 12)),
+            ),
+          ],
         ),
+        const SizedBox(height: 10),
+
+        // 用户名
+        Text('代理认证（可选，需密码的代理填写）',
+            style: TextStyle(color: AppColors.fgMuted.color, fontSize: 10)),
+        const SizedBox(height: 4),
+        TextField(
+          controller: userCtrl,
+          decoration: _decoration('用户名'),
+          style: TextStyle(color: AppColors.fg.color, fontSize: 12),
+        ),
+        const SizedBox(height: 8),
+
+        // 密码
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: passCtrl,
+                obscureText: _obscurePass,
+                decoration: _decoration('密码'),
+                style: TextStyle(color: AppColors.fg.color, fontSize: 12),
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton(
+              icon: Icon(
+                _obscurePass ? Icons.visibility_off : Icons.visibility,
+                size: 18,
+                color: AppColors.fgMuted.color,
+              ),
+              onPressed: () => setState(() => _obscurePass = !_obscurePass),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+
+        // 测试按钮 + 结果
+        Row(
+          children: [
+            TextButton.icon(
+              onPressed: _testing
+                  ? null
+                  : () async {
+                      final proxy = proxyCtrl.text.trim();
+                      if (proxy.isEmpty) {
+                        setState(() {
+                          _testResult = '请先填写代理地址';
+                          _testSuccess = false;
+                        });
+                        return;
+                      }
+                      // 先保存再测试
+                      await context.read<AppStore>().setProxy(proxy,
+                          username: userCtrl.text.trim(),
+                          password: passCtrl.text);
+                      setState(() {
+                        _testing = true;
+                        _testResult = null;
+                      });
+                      final result =
+                          await context.read<AppStore>().testProxy();
+                      if (!mounted) return;
+                      setState(() {
+                        _testing = false;
+                        _testResult = result.message;
+                        _testSuccess = result.success;
+                      });
+                    },
+              icon: _testing
+                  ? SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppColors.info.color,
+                      ),
+                    )
+                  : Icon(Icons.network_check, size: 16, color: AppColors.warning.color),
+              label: Text('测试连接',
+                  style: TextStyle(color: AppColors.warning.color, fontSize: 12)),
+            ),
+          ],
+        ),
+        if (_testResult != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Row(
+              children: [
+                Icon(
+                  _testSuccess! ? Icons.check_circle : Icons.error,
+                  size: 14,
+                  color: _testSuccess!
+                      ? AppColors.success.color
+                      : AppColors.destructive.color,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    _testResult!,
+                    style: TextStyle(
+                      color: _testSuccess!
+                          ? AppColors.success.color
+                          : AppColors.destructive.color,
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
       ],
     );
   }

@@ -217,6 +217,7 @@ class UsageExtractor {
   final List<Account> accounts;
   final OnRefreshProgress? onProgress;
   final AccountSessionManager? sessionManager;
+  final void Function(HttpAuthRequest)? onHttpAuthRequest;
 
   bool _running = false;
   int _successCount = 0;
@@ -230,6 +231,7 @@ class UsageExtractor {
     required this.accounts,
     this.onProgress,
     this.sessionManager,
+    this.onHttpAuthRequest,
   });
 
   /// 收集所有需要刷新的项目（按账号分组，便于 Cookie 切换）
@@ -301,6 +303,7 @@ class UsageExtractor {
       onPageFinished: (_) {
         if (!loaded.isCompleted) loaded.complete(true);
       },
+      onHttpAuthRequest: onHttpAuthRequest,
     );
     controller.setNavigationDelegate(navDelegate);
 

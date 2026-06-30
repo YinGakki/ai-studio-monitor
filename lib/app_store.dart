@@ -6,6 +6,7 @@ import 'services/config_service.dart';
 import 'services/usage_extractor.dart';
 import 'services/account_session_manager.dart';
 import 'services/native_proxy_manager.dart';
+import 'services/proxy_tester.dart';
 import 'models/models.dart';
 
 /// 全局应用状态 - 对应原 AIFloatingWindow 的状态管理部分
@@ -141,6 +142,7 @@ class AppStore extends ChangeNotifier {
       controller: controller,
       accounts: config.accounts,
       sessionManager: _sessionManager,
+      onHttpAuthRequest: proxyAuthCallback,
       onProgress: (state) {
         switch (state) {
           case RefreshState.saved:
@@ -220,13 +222,41 @@ class AppStore extends ChangeNotifier {
     }
   }
 
-  /// 更新代理配置并即时应用到 WebView（设置页保存时调用）
+  /// 更新代理配置（含凭证）并即时应用到 WebView
   /// 返回 true 表示代理已生效
-  Future<bool> setProxy(String proxy) async {
+  Future<bool> setProxy(String proxy,
+      {String? username, String? password}) async {
     await config.setProxy(proxy);
+    if (username != null && password != null) {
+      await config.setProxyCredentials(username, password);
+    }
     final ok = await _applyProxy();
     notifyListeners();
     return ok;
+  }
+
+  /// 测试代理连通性
+  Future<ProxyTestResult> testProxy() async {
+    return ProxyTester.test(
+      proxy: config.proxy,
+      username: config.proxyUsername,
+      password: config.proxyPassword,
+    );
+  }
+
+  /// 创建 WebView 代理认证回调
+  /// 当代理需要密码（配置了 username）时返回回调，否则返回 null
+  /// 用于 NavigationDelegate.onHttpAuthRequest
+  void Function(HttpAuthRequest)? get proxyAuthCallback {
+    if (config.proxy.isEmpty) return null;
+    final user = config.proxyUsername;
+    if (user.isEmpty) return null;
+    final pass = config.proxyPassword;
+    return (HttpAuthRequest request) {
+      request.onProceed(
+        WebViewCredential(username: user, password: pass),
+      );
+    };
   }
 }
 

@@ -12,11 +12,15 @@ class ConfigService {
   final List<Account> _accounts = [];
   List<String> _monitoredModels = [];
   String _proxy = '';
+  String _proxyUsername = '';
+  String _proxyPassword = '';
   double _uiScale = 1.0;
 
   List<Account> get accounts => List.unmodifiable(_accounts);
   List<String> get monitoredModels => List.unmodifiable(_monitoredModels);
   String get proxy => _proxy;
+  String get proxyUsername => _proxyUsername;
+  String get proxyPassword => _proxyPassword;
   double get uiScale => _uiScale;
   Map<String, dynamic> get raw => Map.unmodifiable(_config);
 
@@ -37,6 +41,8 @@ class ConfigService {
     _config['accounts'] = _accounts.map((a) => a.toJson()).toList();
     _config['monitored_models'] = _monitoredModels;
     _config['proxy'] = _proxy;
+    _config['proxy_username'] = _proxyUsername;
+    _config['proxy_password'] = _proxyPassword;
     _config['ui'] = {'scale': _uiScale};
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kPrefKey, json.encode(_config));
@@ -51,6 +57,8 @@ class ConfigService {
         .map((e) => e.toString())
         .toList();
     _proxy = _config['proxy']?.toString() ?? '';
+    _proxyUsername = _config['proxy_username']?.toString() ?? '';
+    _proxyPassword = _config['proxy_password']?.toString() ?? '';
     _uiScale = (_config['ui']?['scale'] ?? 1.0).toDouble();
   }
 
@@ -112,6 +120,12 @@ class ConfigService {
   // ---- 代理 ----
   Future<void> setProxy(String proxy) async {
     _proxy = proxy;
+    await save();
+  }
+
+  Future<void> setProxyCredentials(String username, String password) async {
+    _proxyUsername = username;
+    _proxyPassword = password;
     await save();
   }
 
