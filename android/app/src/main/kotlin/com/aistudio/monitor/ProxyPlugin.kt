@@ -6,6 +6,7 @@ import androidx.webkit.WebViewFeature
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import java.util.concurrent.Executor
 
 /**
  * WebView 代理插件
@@ -56,9 +57,12 @@ class ProxyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                     val config = ProxyConfig.Builder()
                         .addProxyRule(proxyRule.trim())
                         .build()
-                    proxyController.setProxyOverride(config, Runnable {
-                        result.success(true)
-                    })
+                    // setProxyOverride 需要 Executor + Runnable，Executor 同步执行确保回调在主线程
+                    proxyController.setProxyOverride(
+                        config,
+                        Executor { command -> command.run() },
+                        Runnable { result.success(true) }
+                    )
                 }
                 "clearProxy" -> {
                     clearProxyOverride(result)
@@ -76,9 +80,10 @@ class ProxyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                 "设备 WebView 不支持 PROXY_OVERRIDE 特性", null)
             return
         }
-        ProxyController.getInstance().clearProxyOverride(Runnable {
-            result.success(true)
-        })
+        ProxyController.getInstance().clearProxyOverride(
+            Executor { command -> command.run() },
+            Runnable { result.success(true) }
+        )
     }
 
     companion object {
